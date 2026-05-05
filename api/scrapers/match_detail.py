@@ -12,14 +12,11 @@ from utils.cache_manager import cache_manager
 from utils.constants import (
     CACHE_TTL_MATCH_DETAIL,
     CACHE_TTL_MATCH_DETAIL_LIVE,
-    MATCH_DETAIL_TAB_FETCH_CONCURRENCY,
-    MATCH_DETAIL_TAB_FETCH_TIMEOUT,
     VLR_BASE_URL,
 )
-from utils.error_handling import handle_scraper_errors, upstream_error_payload
-from utils.html_parsers import build_full_url, extract_text_content, normalize_image_url, parse_href_id_slug
+from utils.error_handling import handle_scraper_errors
+from utils.html_parsers import build_full_url, normalize_image_url, parse_href_id_slug
 from utils.http_client import fetch_with_retries, get_http_client
-from utils.id_mapper import id_mapper
 
 logger = logging.getLogger(__name__)
 
@@ -39,15 +36,16 @@ def _parse_event_info(html: HTMLParser) -> dict:
         # The first child div holds the event name link
         first_div = super_elem.css_first("div")
         if first_div:
+            # Try the anchor text within it first
             anchor = first_div.css_first("a")
             if anchor:
-                event_name = extract_text_content(anchor)
+                event_name = anchor.text(strip=True)
             else:
-                event_name = extract_text_content(first_div)
+                event_name = first_div.text(strip=True)
 
         series_elem = super_elem.css_first(".match-header-event-series")
         if series_elem:
-            event_series = extract_text_content(series_elem)
+            event_series = series_elem.text(strip=True)
 
     # Event logo lives in .match-header-event img
     logo_elem = html.css_first(".match-header-event img")
@@ -66,17 +64,17 @@ def _parse_match_header(html: HTMLParser) -> dict:
 
     date_elem = html.css_first(".match-header-date")
     if date_elem:
-        date = extract_text_content(date_elem)
+        date = date_elem.text(strip=True)
 
     note_elem = html.css_first(".match-header-note")
     if note_elem:
-        patch = extract_text_content(note_elem)
+        patch = note_elem.text(strip=True)
 
     vs_note_elem = html.css_first(".match-header-vs-note")
     if vs_note_elem:
-        status = extract_text_content(vs_note_elem)
+        status = vs_note_elem.text(strip=True)
 
-    return {"date": date, "map_vetos": patch, "status": status}
+    return {"date": date, "patch": patch, "status": status}
 
 
 def _is_live(html: HTMLParser) -> bool:
@@ -84,7 +82,7 @@ def _is_live(html: HTMLParser) -> bool:
     vs_note_elem = html.css_first(".match-header-vs-note")
     if not vs_note_elem:
         return False
-    return "LIVE" in extract_text_content(vs_note_elem).upper()
+    return "LIVE" in vs_note_elem.text(strip=True).upper()
 
 
 def _parse_teams(html: HTMLParser) -> list[dict]:
@@ -97,12 +95,6 @@ def _parse_teams(html: HTMLParser) -> list[dict]:
     teams: list[dict] = []
 
     for mod in ("mod-1", "mod-2"):
-        team_id = ""
-        link_elem = html.css_first(f".match-header-link.{mod}")
-        if link_elem:
-            href = link_elem.attributes.get("href", "")
-            team_id, _ = parse_href_id_slug(href)
-
         name_elem = html.css_first(f".match-header-link-name.{mod}")
         name = ""
         tag = ""
@@ -115,17 +107,7 @@ def _parse_teams(html: HTMLParser) -> list[dict]:
             if len(lines) > 1:
                 tag = lines[1]
 
-        teams.append(
-            {
-                "id": team_id,
-                "name": name,
-                "tag": tag,
-                "logo": "",
-                "score": "",
-                "is_winner": False,
-            }
-        )
-        id_mapper.register_team(name, team_id)
+        teams.append({"name": name, "tag": tag, "logo": "", "score": "", "is_winner": False})
 
     # Logos: two <img> elements inside .match-header-vs
     vs_elem = html.css_first(".match-header-vs")
@@ -181,7 +163,7 @@ def _parse_streams_vods(html: HTMLParser) -> tuple[list[dict], list[dict]]:
 
     for btn in html.css(".match-streams-btn"):
         href = btn.attributes.get("href", "")
-        name = extract_text_content(btn)
+        name = btn.text(strip=True)
         if name or href:
             streams.append({"name": name, "url": build_full_url(href)})
 
@@ -189,7 +171,7 @@ def _parse_streams_vods(html: HTMLParser) -> tuple[list[dict], list[dict]]:
     if vods_container:
         for anchor in vods_container.css("a"):
             href = anchor.attributes.get("href", "")
-            name = extract_text_content(anchor)
+            name = anchor.text(strip=True)
             if name or href:
                 vods.append({"name": name, "url": href})
 
@@ -235,15 +217,25 @@ def _parse_player_row(cells: list) -> dict:
     def safe_val(idx: int) -> str:
         return cell_val(cells[idx]) if idx < len(cells) else ""
 
-    # Player name — [0] mod-player
+    # Player name — [0] mod-player#
+
     player_name = ""
     if cells:
         player_cell = cells[0]
+
+        a_tag = player_cell.css_first("a")
+        href = a_tag.attributes.get("href", "") if a_tag else ""
+
+        player_id = href.split("/")[2]
+        href_name = href.split("/")[3]
+       
         name_div = player_cell.css_first(".text-of")
         if name_div:
             player_name = name_div.text(strip=True)
         else:
             player_name = player_cell.text(strip=True)
+
+    
 
     # Agent — [1] mod-agents, icon title
     agent = ""
@@ -254,6 +246,8 @@ def _parse_player_row(cells: list) -> dict:
 
     return {
         "name": player_name,
+        "player_id": player_id,
+        "href_name": href_name,
         "agent": agent,
         "rating": safe_val(2),
         "acs": safe_val(3),
@@ -286,7 +280,9 @@ def _parse_map_players(game_elem) -> dict:
     def parse_table_rows(table) -> list[dict]:
         players = []
         for row in table.css("tbody tr"):
+
             cells = row.css("td")
+
             if not cells:
                 continue
             # Skip separator rows: they typically contain very few cells
@@ -482,18 +478,19 @@ def _parse_head_to_head(html: HTMLParser) -> list[dict]:
         for te in team_elems:
             cls = te.attributes.get("class", "")
             is_winner = "mod-win" in cls
-            teams.append({"name": extract_text_content(te), "is_winner": is_winner})
+            teams.append({"name": te.text(strip=True), "is_winner": is_winner})
 
         score_elem = row.css_first(".match-h2h-matches-score")
-        score = extract_text_content(score_elem) if score_elem else ""
+        score = score_elem.text(strip=True) if score_elem else ""
 
         event_elem = row.css_first(".match-h2h-matches-event-name")
-        event = extract_text_content(event_elem) if event_elem else ""
+        event = event_elem.text(strip=True) if event_elem else ""
 
         date_elem = row.css_first(".match-h2h-matches-date")
-        date = extract_text_content(date_elem) if date_elem else ""
+        date = date_elem.text(strip=True) if date_elem else ""
 
         href = row.attributes.get("href", "")
+
         url = build_full_url(href)
 
         h2h.append({
@@ -526,18 +523,11 @@ async def _fetch_game_tab_html(
     base_url: str,
     game_id: str,
     tab: str,
-    timeout: int = MATCH_DETAIL_TAB_FETCH_TIMEOUT,
 ) -> tuple[str, str, HTMLParser | None]:
     """Fetch one game-tab page and return parsed HTML when available."""
     url = f"{base_url}/?game={game_id}&tab={tab}"
     try:
-        resp = await fetch_with_retries(url, client=client, timeout=timeout)
-        if resp.status_code >= 400:
-            logger.warning(
-                "Failed to fetch %s tab for game %s: upstream status %d",
-                tab, game_id, resp.status_code,
-            )
-            return game_id, tab, None
+        resp = await fetch_with_retries(url, client=client)
         return game_id, tab, HTMLParser(resp.text)
     except Exception as exc:
         logger.warning("Failed to fetch %s tab for game %s: %s", tab, game_id, exc)
@@ -566,7 +556,7 @@ def _parse_kill_matrix(html: HTMLParser) -> list[dict]:
     opponents: list[str] = []
     if header_row:
         for th in header_row.css("th"):
-            opponents.append(extract_text_content(th))
+            opponents.append(th.text(strip=True))
 
     for row in table.css("tbody tr"):
         cells = row.css("td")
@@ -574,12 +564,12 @@ def _parse_kill_matrix(html: HTMLParser) -> list[dict]:
             continue
 
         player_cell = cells[0]
-        player_name = extract_text_content(player_cell)
+        player_name = player_cell.text(strip=True)
 
         kills_vs: dict[str, str] = {}
         for idx, cell in enumerate(cells[1:], start=1):
             opponent = opponents[idx] if idx < len(opponents) else str(idx)
-            kills_vs[opponent] = extract_text_content(cell)
+            kills_vs[opponent] = cell.text(strip=True)
 
         matrix.append({"player": player_name, "kills_vs": kills_vs})
 
@@ -603,19 +593,19 @@ def _parse_advanced_stats(html: HTMLParser) -> list[dict]:
     headers: list[str] = []
     if header_row:
         for th in header_row.css("th"):
-            headers.append(extract_text_content(th))
+            headers.append(th.text(strip=True))
 
     for row in table.css("tbody tr"):
         cells = row.css("td")
         if not cells:
             continue
 
-        player_name = extract_text_content(cells[0]) if cells else ""
+        player_name = cells[0].text(strip=True) if cells else ""
         stat_dict: dict[str, str] = {"player": player_name}
 
         for idx, cell in enumerate(cells[1:], start=1):
             label = headers[idx] if idx < len(headers) else str(idx)
-            stat_dict[label] = extract_text_content(cell)
+            stat_dict[label] = cell.text(strip=True)
 
         advanced.append(stat_dict)
 
@@ -642,7 +632,7 @@ def _parse_economy(html: HTMLParser) -> list[dict]:
     headers: list[str] = []
     if header_row:
         for th in header_row.css("th"):
-            headers.append(extract_text_content(th))
+            headers.append(th.text(strip=True))
 
     for row in table.css("tbody tr"):
         cells = row.css("td")
@@ -652,7 +642,7 @@ def _parse_economy(html: HTMLParser) -> list[dict]:
         row_dict: dict[str, str] = {}
         for idx, cell in enumerate(cells):
             label = headers[idx] if idx < len(headers) else str(idx)
-            row_dict[label] = extract_text_content(cell)
+            row_dict[label] = cell.text(strip=True)
 
         economy.append(row_dict)
 
@@ -712,11 +702,8 @@ async def vlr_match_detail(match_id: str) -> dict:
         client = get_http_client()
 
         base_resp = await fetch_with_retries(base_url, client=client)
-        http_status = base_resp.status_code
-        if http_status >= 400:
-            return upstream_error_payload(http_status, f"match detail {match_id}")
-
         base_html = HTMLParser(base_resp.text)
+        http_status = base_resp.status_code
 
         game_ids = _extract_game_ids(base_html)
         first_game_id = game_ids[0] if game_ids else None
@@ -725,21 +712,9 @@ async def vlr_match_detail(match_id: str) -> dict:
         economy_by_game: dict[str, list[dict]] = {}
 
         if game_ids:
-            tab_fetch_semaphore = asyncio.Semaphore(MATCH_DETAIL_TAB_FETCH_CONCURRENCY)
-
-            async def fetch_tab(game_id: str, tab: str):
-                async with tab_fetch_semaphore:
-                    return await _fetch_game_tab_html(
-                        client,
-                        base_url,
-                        game_id,
-                        tab,
-                        timeout=MATCH_DETAIL_TAB_FETCH_TIMEOUT,
-                    )
-
             tab_results = await asyncio.gather(
                 *[
-                    fetch_tab(game_id, tab)
+                    _fetch_game_tab_html(client, base_url, game_id, tab)
                     for game_id in game_ids
                     for tab in ("performance", "economy")
                 ]
@@ -779,7 +754,7 @@ async def vlr_match_detail(match_id: str) -> dict:
             "match_id": match_id,
             "event": event_info,
             "date": header_info["date"],
-            "map_vetos": header_info["map_vetos"],
+            "patch": header_info["patch"],
             "status": header_info["status"],
             "teams": teams,
             "streams": streams,

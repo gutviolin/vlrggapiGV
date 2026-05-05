@@ -5,6 +5,9 @@ Configuration constants for VLR.GG API
 # Base URLs
 VLR_BASE_URL = "https://www.vlr.gg"
 VLR_EVENTS_URL = f"{VLR_BASE_URL}/events"
+VLR_VCT_EVENTS_URL = f"{VLR_BASE_URL}/events/?tier=60"
+VLR_VCL_EVENTS_URL = f"{VLR_BASE_URL}/events/?tier=61"
+VLR_T3_EVENTS_URL = f"{VLR_BASE_URL}/events/?tier=62"
 VLR_MATCHES_URL = f"{VLR_BASE_URL}/matches"
 VLR_RANKINGS_URL = f"{VLR_BASE_URL}/rankings"
 VLR_STATS_URL = f"{VLR_BASE_URL}/stats"
