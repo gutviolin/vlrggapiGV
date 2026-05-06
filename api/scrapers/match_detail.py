@@ -57,14 +57,16 @@ def _parse_event_info(html: HTMLParser) -> dict:
 
 
 def _parse_match_header(html: HTMLParser) -> dict:
-    """Extract date, patch, and status from the match header."""
+    """Extract date, patch, and status from the match header."""#
+    
     date = ""
     patch = ""
     status = ""
 
-    date_elem = html.css_first(".match-header-date")
+    date_elem = html.css_first("div.moment-tz-convert")
+
     if date_elem:
-        date = date_elem.text(strip=True)
+        date = date_elem.attributes.get("data-utc-ts")
 
     note_elem = html.css_first(".match-header-note")
     if note_elem:

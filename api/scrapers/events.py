@@ -31,8 +31,10 @@ def _parse_event_cards(container) -> list:
         img_elem = event_item.css_first(".event-item-thumb img")
         thumb = normalize_image_url(img_elem.attributes.get("src", "") if img_elem else "")
         full_url = build_full_url(event_item.attributes.get("href", ""))
+        event_id = event_item.attributes.get("href", "").split("/")[2]
         events.append({
             "title": title,
+            "event_id": event_id,
             "status": event_status,
             "prize": prize,
             "dates": dates,
@@ -69,16 +71,12 @@ async def vlr_events(upcoming=True, completed=True, page=1, event_tier="ALL"):
         match event_tier:
             case "ALL":
                 url = f"{VLR_EVENTS_URL}/?page={page}" if show_completed and page > 1 else VLR_EVENTS_URL
-                print("ALL")
             case "VCT":
                 url = f"{VLR_VCT_EVENTS_URL}/?page={page}" if show_completed and page > 1 else VLR_VCT_EVENTS_URL
-                print("VCT")
             case "VCL":
                 url = f"{VLR_VCL_EVENTS_URL}/?page={page}" if show_completed and page > 1 else VLR_VCL_EVENTS_URL
-                print("VCL")
             case "T3":
                 url = f"{VLR_T3_EVENTS_URL}/?page={page}" if show_completed and page > 1 else VLR_T3_EVENTS_URL
-                print("T3")
 
         client = get_http_client()
         resp = await fetch_with_retries(url, client=client)
