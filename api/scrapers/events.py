@@ -3,7 +3,14 @@ import logging
 from selectolax.parser import HTMLParser
 
 from utils.http_client import fetch_with_retries, get_http_client
-from utils.constants import VLR_BASE_URL, VLR_EVENTS_URL, CACHE_TTL_EVENTS, CACHE_TTL_EVENT_MATCHES, VLR_VCT_EVENTS_URL, VLR_VCL_EVENTS_URL, VLR_T3_EVENTS_URL
+from utils.constants import (
+    VLR_BASE_URL, VLR_EVENTS_URL,
+    CACHE_TTL_EVENTS, CACHE_TTL_EVENT_MATCHES,
+    VLR_VCT_EVENTS_URL,
+    VLR_VCL_EVENTS_URL,
+    VLR_T3_EVENTS_URL,
+    VLR_GC_EVENTS_URL,
+    VLR_COL_EVENTS_URL)
 from utils.cache_manager import cache_manager
 from utils.error_handling import handle_scraper_errors
 from utils.html_parsers import (
@@ -54,7 +61,7 @@ async def vlr_events(upcoming=True, completed=True, page=1, event_tier="ALL"):
         upcoming (bool): If True, include upcoming events
         completed (bool): If True, include completed events
         page (int): Page number for pagination (only applies to completed events)
-        event_tier (str): type of event, (VCT, VCL, T3, ALL)
+        event_tier (str): type of event, (VCT, VCL, T3, GC, COL or ALL)
 
     Returns:
         dict: Response with status code and events data
@@ -77,6 +84,10 @@ async def vlr_events(upcoming=True, completed=True, page=1, event_tier="ALL"):
                 url = f"{VLR_VCL_EVENTS_URL}&page={page}" if show_completed and page > 1 else VLR_VCL_EVENTS_URL
             case "T3":
                 url = f"{VLR_T3_EVENTS_URL}&page={page}" if show_completed and page > 1 else VLR_T3_EVENTS_URL
+            case "GC":
+                url = f"{VLR_GC_EVENTS_URL}&page={page}" if show_completed and page > 1 else VLR_GC_EVENTS_URL
+            case "COL":
+                url = f"{VLR_COL_EVENTS_URL}&page={page}" if show_completed and page > 1 else VLR_COL_EVENTS_URL
 
 
         print(url)

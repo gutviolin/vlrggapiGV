@@ -126,7 +126,7 @@ async def v2_events(
     request: Request,
     q: str = Query(None, description="Event type: upcoming or completed"),
     page: int = Query(1, description="Page number (completed events only)", ge=1, le=100),#
-    event_tier: str = Query("ALL", description="Event type: VCT, VCL, T3, ALL"),
+    event_tier: str = Query("ALL", description="Event type: VCT, VCL, T3, GC, COL or ALL"),
 ):
     """
     Get Valorant events.
