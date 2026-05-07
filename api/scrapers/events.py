@@ -70,14 +70,16 @@ async def vlr_events(upcoming=True, completed=True, page=1, event_tier="ALL"):
         url = ""
         match event_tier:
             case "ALL":
-                url = f"{VLR_EVENTS_URL}/?page={page}" if show_completed and page > 1 else VLR_EVENTS_URL
+                url = f"{VLR_EVENTS_URL}&page={page}" if show_completed and page > 1 else VLR_EVENTS_URL
             case "VCT":
-                url = f"{VLR_VCT_EVENTS_URL}/?page={page}" if show_completed and page > 1 else VLR_VCT_EVENTS_URL
+                url = f"{VLR_VCT_EVENTS_URL}&page={page}" if show_completed and page > 1 else VLR_VCT_EVENTS_URL
             case "VCL":
-                url = f"{VLR_VCL_EVENTS_URL}/?page={page}" if show_completed and page > 1 else VLR_VCL_EVENTS_URL
+                url = f"{VLR_VCL_EVENTS_URL}&page={page}" if show_completed and page > 1 else VLR_VCL_EVENTS_URL
             case "T3":
-                url = f"{VLR_T3_EVENTS_URL}/?page={page}" if show_completed and page > 1 else VLR_T3_EVENTS_URL
+                url = f"{VLR_T3_EVENTS_URL}&page={page}" if show_completed and page > 1 else VLR_T3_EVENTS_URL
 
+
+        print(url)
         client = get_http_client()
         resp = await fetch_with_retries(url, client=client)
         html = HTMLParser(resp.text)
