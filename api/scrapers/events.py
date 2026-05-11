@@ -98,6 +98,9 @@ async def vlr_events(upcoming=True, completed=True, page=1, event_tier="ALL"):
 
         events = []
 
+        last_link = html.css("a.btn.mod-page")[-1]
+        last_page = last_link.text(strip=True)
+
         if show_upcoming:
             for section in html.css("div.wf-label.mod-large.mod-upcoming"):
                 parent = section.parent
@@ -110,7 +113,7 @@ async def vlr_events(upcoming=True, completed=True, page=1, event_tier="ALL"):
                 if parent and parent.css("a.event-item"):
                     events.extend(_parse_event_cards(parent))
 
-        return {"data": {"status": status, "segments": events}}
+        return {"data": {"status": status, "segments": events, "pages": last_page}}
 
     return await cache_manager.get_or_create_async(CACHE_TTL_EVENTS, build, *cache_key)
 
