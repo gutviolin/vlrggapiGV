@@ -106,7 +106,10 @@ def _parse_teams(html: HTMLParser) -> list[dict]:
         # Print the matched node HTML
         if href:
             href = href.attributes.get("href")
-            team_id = href.split("/")[2]
+            try:
+                team_id = href.split("/")[2]
+            except(AttributeError):
+                team_id = "0"
 
         name = ""
         tag = ""
